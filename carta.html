@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carta</title>
+</head>
+<script src="//cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dragula/3.7.3/dragula.min.js"></script>
+
+<body>
+    <h1>Carta</h1>
+    <p>En esta página se mostrarán 3 cartas aleatorias de la baraja española</p>
+
+    <div id="gamingTable">
+        <!-- Solo ronda 1 es visible inicialmente -->
+        <div id="gamingTableRound1" class="round" style="display: block;">
+            <h2>Ronda 1</h2>
+        </div>
+        <div id="gamingTableRound2" class="round" style="display: none;">
+            <h2>Ronda 2</h2>
+        </div>
+        <div id="gamingTableRound3" class="round" style="display: none;">
+            <h2>Ronda 3</h2>
+        </div>
+    </div>
+    <div id="myHand">
+
+    </div>
+    <style>
+        body {
+    background: #e39027;
+
+}/* Estilo para la mesa de juego */
+#gamingTable {
+            width: 100%;
+            height: 400px;
+            margin-top: 20px;
+            background-color: #ccc;
+            border: 2px dashed black;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+.carta {
+    margin:1em;
+    padding:1em;
+    background:white;
+    border-radius:0.5em;
+    border:1px solid black;
+    display:inline-block;
+    max-width:120px;
+}
+
+.carta figure{
+    margin:0;
+    padding:0;
+    display:inline;
+}
+.carta .numero,.carta .numero_footer{
+    display:block;
+    font-size:1.9em;
+    font-weight:bolder;
+}
+.gu-transit {
+    opacity: 0.7;
+    transform: scale(1.05);
+    box-shadow: 5px 5px 10px rgba(0,0,0,0.5);
+}
+.round {
+    min-height: 100px; /* Asegúrate de que cada ronda tenga suficiente altura */
+    /* Otros estilos... */
+}
+.carta .numero_footer{
+    transform:rotate(-180deg) ;
+}
+    </style>
+
+    
+    <script>
+        var allCartas;
+        var drake;
+        var roundId = 1;
+
+        function inicializarDragula() {
+    if (drake) {
+        drake.destroy(); // Destruye la instancia anterior
+    }
+
+    drake = dragula({
+            isContainer: function (el) {
+                // Contenedores válidos para Dragula
+                return el.id === 'myHand' || el.classList.contains('round');
+            },
+            accepts: function (el, target, source, sibling) {
+        // Permite soltar solo si es el turno del jugador y es la ronda correcta
+        return currentTurn && target.id === 'gamingTableRound' + roundId;
+    },
+        invalid: function (el, handle) {
+            return el.classList.contains('no-drag'); // Elementos que no se deben arrastrar
+        }
+    });
+    drake.on('drop', function (el, target, source, sibling) {
+        // Aquí puedes agregar tu lógica cuando una carta es soltada en un contenedor válido
+        console.log('Carta soltada:', el.id);
+        // Ejemplo: Envía la acción al servidor
+        sendPlayerAction(`Carta movida: ${el.id}`);
+    });
+
+        }
+    // Inicializar Dragula
+        function agregarCartas(cartas, contenedorId) {
+    var contenedor = document.getElementById(contenedorId);
+    if (!contenedor) {
+        console.error('El contenedor no existe:', contenedorId);
+        return;
+    }
+
+    cartas.forEach(element => {
+        var newCard = document.createElement("article");
+        //newCard.draggable = true;
+        newCard.id = 'carta-' + element.id;
+       // newCard.addEventListener('dragstart', dragStart);
+
+        newCard.className = "carta";
+        var newCardNumber = document.createElement("span");
+        newCardNumber.className = "numero";
+        newCardNumber.innerHTML = element.number;
+        
+        var newCardNumberFooter = document.createElement("span");
+        newCardNumberFooter.className = "numero_footer";
+        newCardNumberFooter.innerHTML = element.number;
+
+        var newCardNumberFigure = document.createElement("figure");
+        var newCardNumberImg = document.createElement("img");
+        newCardNumberImg.src = element.type + ".png";
+        newCardNumberFigure.appendChild(newCardNumberImg);
+
+        newCard.appendChild(newCardNumber);
+        newCard.appendChild(newCardNumberFigure);
+        newCard.appendChild(newCardNumberFooter);
+
+        contenedor.appendChild(newCard);
+    });
+        inicializarDragula();
+       // Evento cuando una carta es soltada
+       
+}
+        var socket;
+var currentTurn = false;
+function getCardValue(card) {
+    // Definir el valor especial de algunas cartas en el truco
+    const specialCards = {
+        "1-espada": 14,
+        "1-basto": 13,
+        "7-espada": 12,
+        "7-oro": 11,
+        // Agrega aquí otras cartas especiales si es necesario
+    };
+
+    const cardKey = `${card.number}-${card.type}`;
+    return specialCards[cardKey] || card.number;
+}
+
+function playGame(card1, card2) {
+    const card1Value = getCardValue(card1);
+    const card2Value = getCardValue(card2);
+
+    if (card1Value > card2Value) {
+        return card1;
+    } else if (card2Value > card1Value) {
+        return card2;
+    } else {
+        return null; // Empate
+    }
+}
+function connectWebSocket() {
+    // Cambia la URL por la del servidor WebSocket
+    socket = new WebSocket('ws://192.168.0.105/ws');
+
+    socket.onopen = function() {
+        console.log('WebSocket Conectado');
+        // Aquí puedes enviar un mensaje inicial si es necesario
+        // socket.send('Hola servidor');
+    };
+    
+
+
+    socket.onmessage = function(event) {
+        console.log('Mensaje del servidor:', event.data);
+        
+
+        // detectar si el mensaje incluye  todos los jugadores se encuentran
+
+        if (event.data === 'Todos los jugadores se encuentranTodos los jugadores están conectados. Comienza el juego.') {
+            Swal.fire({
+        title: 'Jugador encontrado',
+        text: 'Comienza el juego',
+        icon: 'info',
+        confirmButtonText: 'Comenzar'
+    });
+        }
+
+        // si el mensaje tiene El ganador es: X con X puntos, entonces separamos el mensaje y mostramos el ganador, ademas le agregamos clases a la ronda y pasamos a la ronda siguiente
+        if (event.data.startsWith('El ganador es: ')) {
+            var ganador = event.data.substring(16);
+            console.log(ganador);
+            Swal.fire({
+        title: 'Ganador',
+        text: ganador,
+        icon: 'success',
+        confirmButtonText: 'Ok'
+    });
+            var rondaActual = document.getElementById('gamingTableRound' + roundId);
+            rondaActual.classList.add("no-drag");
+            rondaActual.classList.add("gu-transit");
+            rondaActual.style.display = 'none'; // Oculta la ronda actual
+            roundId++; // Incrementa el ID de la ronda
+            if (roundId <= 3) {
+                var siguienteRonda = document.getElementById('gamingTableRound' + roundId);
+                siguienteRonda.style.display = 'block'; // Muestra la siguiente ronda
+            }
+        }
+        
+        // detectar si es un array de cartas
+        // si es un array de cartas, agregarlas a la mesa de juego
+
+        // si el mensaje es algo asi: "Cartas: [{\"id\":0,\"cards\":[{\"id\":13,\"number\":6,\"type\":\"oro\"},{\"id\":20,\"number\":5,\"type\":\"copa\"},{\"id\":33,\"number\":2,\"type\":\"espada\"}]},{\"id\":1,\"cards\":[{\"id\":11,\"number\":4,\"type\":\"oro\"},{\"id\":33,\"number\":2,\"type\":\"espada\"},{\"id\":2,\"number\":3,\"type\":\"basto\"}]}]", entonces separamos el json y lo convertimos en un array de cartas
+
+        if (event.data.startsWith('Cartas: ')) {
+            console.log(event.data.substring(7));
+            var cartas = JSON.parse(event.data.substring(7));
+            console.log(cartas);
+            agregarCartas(cartas.cards, "myHand");
+        }
+
+        // si el mensaje empieza con Carta movida: carta-1, entonces separamos el mensaje y movemos la carta
+        if (event.data.startsWith('Carta movida: ')) {
+            var cartaId = event.data.substring(20);
+            console.log(cartaId);
+            nuevaCarta = allCartas.find(carta => carta.id == cartaId);
+            console.log(nuevaCarta);
+            agregarCartas([nuevaCarta], "gamingTableRound"+roundId);
+
+
+            
+        }
+
+
+// const winningCard = playGame(card1, card2);
+// if (winningCard) {
+//     console.log(`La carta ganadora es: ${winningCard.number} de ${winningCard.type}`);
+// } else {
+//     console.log("Es un empate");
+// }
+
+
+
+        // si el mensaje es "Tu turno", entonces se puede mover una carta
+        if (event.data === 'Tu turno') {
+            currentTurn = true;
+            Swal.fire({
+                title: '¡Es tu turno!',
+                icon: 'success',
+                confirmButtonText: 'Ok'
+            });
+        }
+
+
+        // Aquí manejas los mensajes entrantes
+    };
+
+    socket.onerror = function(error) {
+        console.log('Error en WebSocket:', error);
+        Swal.fire({
+        title: 'Conexión perdida',
+        text: 'Revisa tu conexión a internet',
+        // necesito que automaticamente se haga un refresh de la pagina
+        
+
+        icon: 'warning',
+        confirmButtonText: 'Reconectar'
+    });
+    window.setTimeout(function(){ 
+    location.reload();
+} ,3000);
+    };
+
+    socket.onclose = function(event) {
+        console.log('WebSocket Cerrado:', event);
+        Swal.fire({
+        title: 'Conexión perdida',
+        text: 'Revisa tu conexión a internet',
+        icon: 'warning',
+        confirmButtonText: 'Reconectar'
+    });
+    };
+}
+
+// Ejemplo de uso: cuando un jugador mueve una carta
+function onCardMoved(cardId) {
+    console.log("Carta movida");
+    sendPlayerAction(`Carta movida: ${cardId}`);
+}
+
+
+
+ // Funciones para manejar el arrastre
+ function dragStart(event) {
+            event.dataTransfer.setData("text", event.target.id);
+        }
+
+        function allowDrop(event) {
+    if (!currentTurn) {
+        Swal.fire({
+            title: 'Aún no es tu turno',
+            icon: 'info',
+            confirmButtonText: 'Ok'
+        });
+        return;
+    }
+
+    // Obtiene el contenedor de destino más cercano con la clase 'round'
+    var dropTarget = event.target.closest('.round');
+
+    // Verifica si el contenedor de destino corresponde a la ronda actual
+    if (dropTarget && dropTarget.id === 'gamingTableRound' + roundId) {
+        event.preventDefault(); // Permite soltar la carta solo si es la ronda correcta
+    } else {
+        // Alerta si el jugador intenta jugar en una ronda incorrecta
+        Swal.fire({
+            title: 'No puedes jugar en esta ronda',
+            text: 'Es la ronda ' + roundId,
+            icon: 'error',
+            confirmButtonText: 'Ok'
+        });
+    }
+}
+
+ // Función para avanzar a la siguiente ronda
+ function avanzarRonda() {
+            var rondaActual = document.getElementById('gamingTableRound' + roundId);
+            rondaActual.style.display = 'none'; // Oculta la ronda actual
+            roundId++; // Incrementa el ID de la ronda
+            if (roundId <= 3) {
+                var siguienteRonda = document.getElementById('gamingTableRound' + roundId);
+                siguienteRonda.style.display = 'block'; // Muestra la siguiente ronda
+            }
+        }
+        function drop(event) {
+           // if (!currentTurn) return;
+
+            event.preventDefault();
+
+            // antes que nada necesito verificar si es el turno del jugador
+            // si no es el turno del jugador, no se puede mover la carta
+            // si es el turno del jugador, se puede mover la carta
+            // si es el turno del jugador, pero no tiene la carta, no se puede mover la carta
+            // si es el turno del jugador, y tiene la carta, se puede mover la carta
+        
+            var data = event.dataTransfer.getData("text");
+            onCardMoved(data); // Aquí envías el evento al servidor
+
+    
+            event.target.appendChild(document.getElementById(data));
+        }
+function sendPlayerAction(action) {
+            console.log("Action enviada: "+action);
+            currentTurn = false;
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(action);
+    }
+}
+window.addEventListener('load', function(){
+    connectWebSocket();
+
+            data = fetch("http://192.168.0.105/cartas");
+            
+            dataResponse = data.then(response => {
+    if (response.ok === true) {
+      
+    } else {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return response.json();
+  });
+  dataResponse.then((e) => {
+    allCartas = e;
+    console.log(e)
+    // get by rand only 3 elements of array e
+    var randomCarte = [];
+    for (let i = 0; i < 3; i++) {
+        var random = Math.floor(Math.random() * e.length);
+        randomCarte.push(e[random]);
+    }
+    console.log(randomCarte);
+    
+    // now remove the selected elements to the array
+    randomCarte.forEach(element => {
+        var index = e.indexOf(element);
+        if (index > -1) {
+            e.splice(index, 1);
+        }
+    });
+
+    
+    //agregarCartas(randomCarte, "myHand");
+
+    
+
+     // Agrega manejadores al gamingTable
+    //  var gamingTable = document.getElementById('gamingTable');
+    //         gamingTable.addEventListener('dragover', allowDrop);
+    //         gamingTable.addEventListener('drop', drop);
+
+
+    
+
+    //     });        });
+    
+    //  // Agrega manejadores al gamingTable
+    //  var gamingTable = document.getElementById('myHand');
+    //         gamingTable.addEventListener('dragover', allowDrop);
+    //         gamingTable.addEventListener('drop', drop);
+    //     })
+
+  
+
+
+ 
+});});
+    </script>
+</body>
+</html>
